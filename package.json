@@ -1,6 +1,6 @@
 {
   "name": "opencode-v2-throughput",
-  "version": "3.0.0",
+  "version": "3.0.1",
   "description": "Live LLM speed metrics for OpenCode v2: TTFT, TPS, latency, token usage and cost per model, with a sidebar widget, per-request toasts, and a benchmark tool.",
   "type": "module",
   "main": "./src/index.ts",

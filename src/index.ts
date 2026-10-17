@@ -30,7 +30,10 @@ const BENCHMARK_INPUT = {
 } as const
 
 export default Plugin.define({
-  id: "opencode-throughput",
+  // Must match the package name. The upstream fork published this same plugin
+  // id under the name opencode-throughput, so reusing it made the two collide
+  // with "Duplicate plugin ID" whenever both were present.
+  id: "opencode-v2-throughput",
 
   async setup(ctx) {
     const controller = new AbortController()
@@ -171,7 +174,7 @@ export default Plugin.define({
     await ctx.tool.transform((editor) => {
       editor.namespace({
         name: "throughput",
-        description: "Model performance benchmarks recorded by opencode-throughput.",
+        description: "Model performance benchmarks recorded by opencode-v2-throughput.",
       })
       editor.add({
         name: "benchmark",

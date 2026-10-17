@@ -75,7 +75,9 @@ function ThroughputWidget(props: {
 }
 
 export default Plugin.define({
-  id: "opencode-throughput",
+  // Kept identical to the server entrypoint's id and to the package name, so a
+  // package install and a local copy never register as two different plugins.
+  id: "opencode-v2-throughput",
 
   setup(context) {
     const [entries, setEntries] = createSignal<LogEntry[]>([])
