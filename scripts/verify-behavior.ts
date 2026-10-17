@@ -203,6 +203,43 @@ const recovered = readLogs().find((l) => l.messageID === "msg_r1")
 check("recorded metrics after reconnect", recovered != null)
 check("post-reconnect metrics are correct", recovered?.latency_ms === 3000 && recovered?.ttft_ms === 1000, `${recovered?.latency_ms}/${recovered?.ttft_ms}`)
 
+// --- a throwing handler must not kill the subscription ----------------------
+fs.writeFileSync(path.join(sandbox, ".opencode", "throughput.jsonl"), "")
+
+const malformedCtx = {
+  app: { name: "opencode", version: "2.0.32", channel: "stable" },
+  location: { directory: locationDirectory, project: { id: "prj_1" } },
+  options: {},
+  event: {
+    subscribe() {
+      return {
+        async *[Symbol.asyncIterator]() {
+          // Missing `data` entirely: the handler must throw internally.
+          yield { type: "session.step.started", created: 1 }
+          yield { type: "session.step.ended", created: 2, data: null }
+          yield stepStarted("msg_ok", 9000, "anthropic", "claude-sonnet-4-5")
+          yield textStarted("msg_ok", 9500)
+          yield stepEnded("msg_ok", 12000, { input: 5, output: 50, reasoning: 0, cache: { read: 0, write: 0 } }, 0.002)
+          let waited = 0
+          while (waited < 1500) {
+            await new Promise((r) => setTimeout(r, 5))
+            waited += 5
+          }
+        },
+      }
+    },
+  },
+  tool: { async transform() { return { dispose: async () => {} } } },
+} as any
+
+const malformedCleanup = await plugin.setup(malformedCtx)
+await new Promise((r) => setTimeout(r, 400))
+await malformedCleanup()
+
+const survived = readLogs().find((l) => l.messageID === "msg_ok")
+check("malformed events did not kill the subscription", survived != null)
+check("metrics after malformed events are correct", survived?.latency_ms === 3000 && survived?.ttft_ms === 500, `${survived?.latency_ms}/${survived?.ttft_ms}`)
+
 // --- bounded log reads -------------------------------------------------------
 check("readLogs honours its limit", readLogs(1).length <= 1, `got ${readLogs(1).length}`)
 

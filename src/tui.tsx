@@ -95,27 +95,54 @@ export default Plugin.define({
       }
     }
 
+    /**
+     * Event handlers must never throw. An uncaught error here escapes into the
+     * terminal client's dispatch loop as an uncaught exception, which both
+     * destabilises the TUI and silently stops metrics for the rest of the run.
+     * A bug in one handler should cost one metric, not the whole widget.
+     */
+    const guard =
+      <T,>(label: string, fn: (event: T) => void) =>
+      (event: T) => {
+        try {
+          fn(event)
+        } catch (error) {
+          console.error(`[throughput] ${label} handler failed:`, error)
+        }
+      }
+
     const unsubscribes = [
-      context.data.on("session.step.started", (event) => {
-        steps.set(event.data.assistantMessageID, {
-          sessionID: event.data.sessionID,
-          providerID: event.data.model.providerID,
-          modelID: event.data.model.id,
-          startedAt: event.data.started ?? event.created,
-        })
-      }),
+      context.data.on(
+        "session.step.started",
+        guard("session.step.started", (event: any) => {
+          steps.set(event.data.assistantMessageID, {
+            sessionID: event.data.sessionID,
+            providerID: event.data.model.providerID,
+            modelID: event.data.model.id,
+            startedAt: event.data.started ?? event.created,
+          })
+        }),
+      ),
 
-      context.data.on("session.text.started", (event) => {
-        const id = event.data.assistantMessageID
-        if (!firstTokenAt.has(id)) firstTokenAt.set(id, event.created)
-      }),
+      context.data.on(
+        "session.text.started",
+        guard("session.text.started", (event: any) => {
+          const id = event.data.assistantMessageID
+          if (!firstTokenAt.has(id)) firstTokenAt.set(id, event.created)
+        }),
+      ),
 
-      context.data.on("session.reasoning.started", (event) => {
-        const id = event.data.assistantMessageID
-        if (!firstTokenAt.has(id)) firstTokenAt.set(id, event.created)
-      }),
+      context.data.on(
+        "session.reasoning.started",
+        guard("session.reasoning.started", (event: any) => {
+          const id = event.data.assistantMessageID
+          if (!firstTokenAt.has(id)) firstTokenAt.set(id, event.created)
+        }),
+      ),
 
-      context.data.on("session.step.ended", (event) => {
+      context.data.on(
+        "session.step.ended",
+        guard("session.step.ended", (event: any) => {
         const { sessionID, assistantMessageID, finish, cost, tokens } = event.data
         const meta = steps.get(assistantMessageID)
         const startedAt = meta?.startedAt ?? event.created
@@ -180,11 +207,21 @@ export default Plugin.define({
 
         steps.delete(assistantMessageID)
         firstTokenAt.delete(assistantMessageID)
-      }),
+        }),
+      ),
 
-      context.data.on("session.execution.failed", (event) => clearSession(event.data.sessionID)),
-      context.data.on("session.execution.interrupted", (event) => clearSession(event.data.sessionID)),
-      context.data.on("session.deleted", (event) => clearSession(event.data.sessionID)),
+      context.data.on(
+        "session.execution.failed",
+        guard("session.execution.failed", (event: any) => clearSession(event.data.sessionID)),
+      ),
+      context.data.on(
+        "session.execution.interrupted",
+        guard("session.execution.interrupted", (event: any) => clearSession(event.data.sessionID)),
+      ),
+      context.data.on(
+        "session.deleted",
+        guard("session.deleted", (event: any) => clearSession(event.data.sessionID)),
+      ),
     ]
 
     const unclaim = context.ui.slot({

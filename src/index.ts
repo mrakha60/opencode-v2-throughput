@@ -146,7 +146,13 @@ export default Plugin.define({
           for await (const event of ctx.event.subscribe({ signal: controller.signal })) {
             backoff = 250
             if (!isMine(event)) continue
-            handle(event)
+            // Never let one malformed event unwind the loop; metrics would stop
+            // silently for the rest of the server's life.
+            try {
+              handle(event)
+            } catch (error) {
+              console.error(`[throughput] ${event.type} handler failed:`, error)
+            }
           }
           if (controller.signal.aborted) return
           console.warn("[throughput] event stream ended, resubscribing")
