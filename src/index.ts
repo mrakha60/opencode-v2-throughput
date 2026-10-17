@@ -58,92 +58,107 @@ export default Plugin.define({
       }
     }
 
-    void (async () => {
-      try {
-        for await (const event of ctx.event.subscribe({ signal: controller.signal })) {
-          if (!isMine(event)) continue
+    const handle = (event: OpenCodeEvent) => {
+      switch (event.type) {
+        case "session.step.started": {
+          const { sessionID, assistantMessageID, model } = event.data
+          steps.set(assistantMessageID, {
+            sessionID,
+            providerID: model.providerID,
+            modelID: model.id,
+            startedAt: event.data.started ?? event.created,
+          })
+          break
+        }
 
-          switch (event.type) {
-            case "session.step.started": {
-              const { sessionID, assistantMessageID, model } = event.data
-              steps.set(assistantMessageID, {
-                sessionID,
-                providerID: model.providerID,
-                modelID: model.id,
-                startedAt: event.data.started ?? event.created,
-              })
-              break
-            }
+        // The first token of any kind anchors TTFT. Reasoning counts, so a
+        // reasoning-only response still reports a time to first token.
+        case "session.text.started":
+        case "session.reasoning.started": {
+          const messageID = event.data.assistantMessageID
+          if (!firstTokenAt.has(messageID)) firstTokenAt.set(messageID, event.created)
+          break
+        }
 
-            // The first token of any kind anchors TTFT. Reasoning counts, so a
-            // reasoning-only response still reports a time to first token.
-            case "session.text.started":
-            case "session.reasoning.started": {
-              const messageID = event.data.assistantMessageID
-              if (!firstTokenAt.has(messageID)) firstTokenAt.set(messageID, event.created)
-              break
-            }
+        case "session.step.ended": {
+          const { sessionID, assistantMessageID, finish, cost, tokens } = event.data
+          const meta = steps.get(assistantMessageID)
+          const startedAt = meta?.startedAt ?? event.created
+          const firstToken = firstTokenAt.get(assistantMessageID)
 
-            case "session.step.ended": {
-              const { sessionID, assistantMessageID, finish, cost, tokens } = event.data
-              const meta = steps.get(assistantMessageID)
-              const startedAt = meta?.startedAt ?? event.created
-              const firstToken = firstTokenAt.get(assistantMessageID)
+          const latencyMs = event.created - startedAt
+          const ttftMs = firstToken != null ? firstToken - startedAt : null
 
-              const latencyMs = event.created - startedAt
-              const ttftMs = firstToken != null ? firstToken - startedAt : null
+          // TPS measures the generation phase, so the time spent waiting for
+          // the first token is excluded rather than folded into the rate.
+          const generationMs = firstToken != null ? event.created - firstToken : latencyMs
+          const outputTokens = tokens?.output ?? 0
+          const tps =
+            generationMs > 0 && outputTokens > 0 ? (outputTokens / generationMs) * 1000 : null
 
-              // TPS measures the generation phase, so the time spent waiting for
-              // the first token is excluded rather than folded into the rate.
-              const generationMs =
-                firstToken != null ? event.created - firstToken : latencyMs
-              const outputTokens = tokens?.output ?? 0
-              const tps =
-                generationMs > 0 && outputTokens > 0 ? (outputTokens / generationMs) * 1000 : null
+          const providerID = meta?.providerID ?? ""
+          const modelID = meta?.modelID ?? "unknown"
 
-              const providerID = meta?.providerID ?? ""
-              const modelID = meta?.modelID ?? "unknown"
-
-              const entry: LogEntry = {
-                ts: new Date().toISOString(),
-                model: getModelKey(providerID, modelID),
-                providerID,
-                modelID,
-                sessionID,
-                messageID: assistantMessageID,
-                ttft_ms: ttftMs,
-                tps,
-                latency_ms: latencyMs > 0 ? latencyMs : null,
-                inputTokens: tokens?.input ?? 0,
-                outputTokens,
-                reasoningTokens: tokens?.reasoning ?? 0,
-                cacheReadTokens: tokens?.cache?.read ?? 0,
-                cacheWriteTokens: tokens?.cache?.write ?? 0,
-                cost: cost ?? 0,
-                finish,
-              }
-
-              appendLog(entry)
-              writeThroughputMarkdown(locationDirectory, entry)
-              console.log(`[throughput] ${buildSummaryLine(entry)}`)
-
-              steps.delete(assistantMessageID)
-              firstTokenAt.delete(assistantMessageID)
-              break
-            }
-
-            case "session.execution.failed":
-            case "session.execution.interrupted":
-            case "session.deleted": {
-              clearSession(event.data.sessionID)
-              break
-            }
+          const entry: LogEntry = {
+            ts: new Date().toISOString(),
+            model: getModelKey(providerID, modelID),
+            providerID,
+            modelID,
+            sessionID,
+            messageID: assistantMessageID,
+            ttft_ms: ttftMs,
+            tps,
+            latency_ms: latencyMs > 0 ? latencyMs : null,
+            inputTokens: tokens?.input ?? 0,
+            outputTokens,
+            reasoningTokens: tokens?.reasoning ?? 0,
+            cacheReadTokens: tokens?.cache?.read ?? 0,
+            cacheWriteTokens: tokens?.cache?.write ?? 0,
+            cost: cost ?? 0,
+            finish,
           }
+
+          appendLog(entry)
+          writeThroughputMarkdown(locationDirectory, entry)
+          console.log(`[throughput] ${buildSummaryLine(entry)}`)
+
+          steps.delete(assistantMessageID)
+          firstTokenAt.delete(assistantMessageID)
+          break
         }
-      } catch (error) {
-        if (!controller.signal.aborted) {
-          console.error("[throughput] event subscription failed:", error)
+
+        case "session.execution.failed":
+        case "session.execution.interrupted":
+        case "session.deleted": {
+          clearSession(event.data.sessionID)
+          break
         }
+      }
+    }
+
+    void (async () => {
+      // The event stream is a live connection. If it drops, resubscribe with
+      // backoff instead of ending the loop, otherwise metrics silently stop for
+      // the rest of the server's life.
+      let backoff = 250
+      while (!controller.signal.aborted) {
+        try {
+          for await (const event of ctx.event.subscribe({ signal: controller.signal })) {
+            backoff = 250
+            if (!isMine(event)) continue
+            handle(event)
+          }
+          if (controller.signal.aborted) return
+          console.warn("[throughput] event stream ended, resubscribing")
+        } catch (error) {
+          if (controller.signal.aborted) return
+          console.warn(
+            `[throughput] event stream error (${(error as Error).message}), retrying in ${backoff}ms`,
+          )
+        }
+        if (controller.signal.aborted) return
+        await new Promise((resolve) => setTimeout(resolve, backoff))
+        backoff = Math.min(backoff * 2, 10_000)
       }
     })()
 

@@ -15,7 +15,9 @@
     "src"
   ],
   "scripts": {
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "sync": "node scripts/sync-install.mjs",
+    "verify": "npm run typecheck && npm run sync && npx tsx scripts/verify-plugin-shape.ts && npx tsx scripts/verify-behavior.ts && npx tsx scripts/verify-tui-setup.ts && npx tsx scripts/check-opentui-conflict.ts"
   },
   "keywords": [
     "opencode",

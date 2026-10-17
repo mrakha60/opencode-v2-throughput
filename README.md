@@ -115,9 +115,13 @@ npm run typecheck
 Verify the entrypoints against OpenCode's own V2 plugin validator and exercise the event handling:
 
 ```sh
-npx tsx scripts/verify-plugin-shape.ts   # both entrypoints export { id, setup }
-npx tsx scripts/verify-behavior.ts       # metric arithmetic, logging, benchmark tool
+npx tsx scripts/verify-plugin-shape.ts    # both entrypoints export { id, setup }
+npx tsx scripts/verify-behavior.ts        # metric arithmetic, logging, tool, resubscribe
+npx tsx scripts/verify-tui-setup.ts       # TUI setup, events, toasts, cleanup
+npx tsx scripts/check-opentui-conflict.ts # a second @opentui/core copy is harmless
 ```
+
+All four run in CI alongside the typecheck.
 
 ## License
 

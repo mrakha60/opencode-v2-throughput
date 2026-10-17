@@ -161,6 +161,51 @@ check("benchmark last=1 returns a single request", limited.content.includes("Tot
 await cleanup()
 check("cleanup returned a function", typeof cleanup === "function")
 
+// --- resilience: a dropped stream must resubscribe, not die -----------------
+fs.writeFileSync(path.join(sandbox, ".opencode", "throughput.jsonl"), "")
+
+let subscribeCalls = 0
+const reconnectCtx = {
+  app: { name: "opencode", version: "2.0.32", channel: "stable" },
+  location: { directory: locationDirectory, project: { id: "prj_1" } },
+  options: {},
+  event: {
+    subscribe() {
+      subscribeCalls++
+      if (subscribeCalls === 1) throw new Error("simulated connection drop")
+      return {
+        async *[Symbol.asyncIterator]() {
+          yield stepStarted("msg_r1", 10000, "anthropic", "claude-sonnet-4-5")
+          yield textStarted("msg_r1", 11000)
+          yield stepEnded("msg_r1", 13000, { input: 10, output: 100, reasoning: 0, cache: { read: 0, write: 0 } }, 0.001)
+          let waited = 0
+          while (waited < 1500) {
+            await new Promise((r) => setTimeout(r, 5))
+            waited += 5
+          }
+        },
+      }
+    },
+  },
+  tool: {
+    async transform() {
+      return { dispose: async () => {} }
+    },
+  },
+} as any
+
+const reconnectCleanup = await plugin.setup(reconnectCtx)
+await new Promise((r) => setTimeout(r, 600))
+await reconnectCleanup()
+
+check("resubscribed after the stream dropped", subscribeCalls >= 2, `calls=${subscribeCalls}`)
+const recovered = readLogs().find((l) => l.messageID === "msg_r1")
+check("recorded metrics after reconnect", recovered != null)
+check("post-reconnect metrics are correct", recovered?.latency_ms === 3000 && recovered?.ttft_ms === 1000, `${recovered?.latency_ms}/${recovered?.ttft_ms}`)
+
+// --- bounded log reads -------------------------------------------------------
+check("readLogs honours its limit", readLogs(1).length <= 1, `got ${readLogs(1).length}`)
+
 fs.rmSync(sandbox, { recursive: true, force: true })
 console.log(failed ? "\nRESULT: FAILED" : "\nRESULT: ALL CHECKS PASSED")
 process.exit(failed ? 1 : 0)

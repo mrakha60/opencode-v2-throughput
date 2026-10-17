@@ -23,7 +23,16 @@ jobs:
       - name: Verify plugin shape
         run: npx tsx scripts/verify-plugin-shape.ts
 
-      # Exercises metric arithmetic, durable logging, and the benchmark tool
-      # against a scripted v2 event stream.
-      - name: Verify behavior
+      # Exercises metric arithmetic, durable logging, benchmark reporting, and
+      # resubscription after a dropped event stream.
+      - name: Verify server plugin behavior
         run: npx tsx scripts/verify-behavior.ts
+
+      # Exercises the TUI plugin's setup, event wiring, toasts, and cleanup.
+      - name: Verify TUI plugin setup
+        run: npx tsx scripts/verify-tui-setup.ts
+
+      # A second physical @opentui/core must not break loading, which is the
+      # failure mode of the published v1 package.
+      - name: Check OpenTUI conflict
+        run: npx tsx scripts/check-opentui-conflict.ts

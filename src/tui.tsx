@@ -8,6 +8,7 @@ import { buildSummaryLine, formatMs, formatNum, formatTokenCount, getModelKey, t
 import { emptyStats, totalCost, totalCount, updateStats } from "./stats.js"
 
 const MAX_RECENT = 10
+const MAX_MODELS = 50
 const MODEL_MAX = 28
 
 function modelStatsLine(model: string, s: ReturnType<typeof emptyStats>): string {
@@ -149,7 +150,15 @@ export default Plugin.define({
 
         setStatsMap((prev) => {
           const next = new Map(prev)
-          if (!next.has(modelKey)) next.set(modelKey, emptyStats(modelKey))
+          if (!next.has(modelKey)) {
+            // Bound the map so a long session cycling through many model
+            // variants cannot grow it without limit. Oldest insertion is first.
+            if (next.size >= MAX_MODELS) {
+              const oldest = next.keys().next().value
+              if (oldest !== undefined) next.delete(oldest)
+            }
+            next.set(modelKey, emptyStats(modelKey))
+          }
           updateStats(next, modelKey, entry)
           return next
         })
