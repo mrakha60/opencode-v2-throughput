@@ -35,7 +35,19 @@ codebase you iterate on, the model that feels responsive is the one worth paying
 
 ## Install
 
-Requires **OpenCode v2.0.0+**. No build step, no dependencies to install.
+Requires **OpenCode v2.0.0+**. No build step and no dependencies to install.
+
+```sh
+opencode plugin add opencode-v2-throughput -g
+```
+
+Restart OpenCode. That's it.
+
+<details>
+<summary>Install without npm</summary>
+
+Copy the source into any plugin directory. There is nothing to build and no
+`node_modules` to create:
 
 ```sh
 mkdir -p ~/.opencode/plugins/throughput
@@ -43,11 +55,28 @@ git clone https://github.com/mrakha60/opencode-v2-throughput.git /tmp/opencode-v
 cp /tmp/opencode-v2-throughput/src/* ~/.opencode/plugins/throughput/
 ```
 
-Restart OpenCode. Done.
+Works globally from your home directory, or drop the same directory into any
+project's `.opencode/plugins/`. The folder name does not matter; the plugin takes
+its identity from the `id` in the code, so `throughput` is just a short label.
 
-Works globally from your home directory, or drop the same directory into any project's
-`.opencode/plugins/`. The folder name does not matter; the plugin takes its identity from the
-`id` in the code, so `throughput` is just a short label.
+</details>
+
+### A note on dependencies
+
+`@opentui/core`, `@opentui/solid`, and `solid-js` are declared as **optional** peer
+dependencies on purpose. OpenCode provides them, and the plugin must resolve them from
+the host runtime.
+
+They are marked optional so npm does not install its own copy. This is not a
+formality: a second physical copy of `@opentui/core` makes the terminal client abort on
+import with
+
+```
+Environment variable "OPENTUI_FORCE_UNICODE" is already registered with different configuration
+```
+
+which is exactly how the [original package](#credits) fails. Only `@opencode/plugin` is
+installed, because it has no native registration and guarantees the import resolves.
 
 ---
 
