@@ -1,143 +1,166 @@
-# opencode-throughput
+# opencode-v2-throughput
 
-Real-time LLM performance monitoring for [OpenCode](https://opencode.ai) v2. Tracks latency, throughput, token usage, and cost per model, with a sidebar widget, toast notifications, and JSONL logging.
+**Find out which of your models is actually fast, and which one is quietly wasting your time.**
 
-## Features
+OpenCode shows you token counts and cost. It does not tell you *why* one request felt instant and
+the next one dragged. This plugin adds the missing half: real latency and throughput numbers, live
+in your sidebar, per request.
 
-- **TTFT** (Time To First Token) — how fast the model starts generating
-- **TPS** (Tokens Per Second) — generation throughput, measured over the generation phase so the TTFT wait is excluded
-- **Total Latency** — end-to-end request time
-- **Token Usage** — input, output, reasoning, cache read/write
-- **Cost Tracking** — per-request and cumulative
-- **Sidebar widget** — live per-model aggregates in the terminal sidebar
-- **Toast Notifications** — a per-request metrics summary
-- **JSONL Logging** — durable history at `~/.opencode/throughput.jsonl`
-- **Benchmark tool** — ask the agent to summarise historical performance
+Built for the **OpenCode v2 plugin API**. It does not run on v1, where the plugin system is different.
 
-## Requirements
+---
 
-OpenCode **v2.0.0 or newer**. The v1 plugin API was removed in v2, so this version does not run on OpenCode v1.
+## What you get
 
-## Installation
+A live sidebar panel, one toast per response, and a tool your agent can query for the history.
 
-### Local plugin (recommended, no build step)
+```
+▼ Throughput  12 reqs  $0.4310
+  claude-sonnet-4-5 1.2s 446/s 3.2s ↑1.2k ↓892
+  gpt-5 0.4s 310/s 1.1s ↑980 ↓1.6k
+  space-bunny-free 6.8s 94/s 12.6s ↑125 ↓550
+  Recent
+  space-bunny-free 6.8s 94/s 12.6s ↑125 ↓550
+  gpt-5 0.4s 310/s 1.1s ↑980 ↓1.6k
+```
 
-Copy `src/` into a plugin directory. The plugin has no runtime dependencies — OpenCode provides `@opencode/plugin` and the OpenTUI packages.
+Each column is: **TTFT** (time to first token, so you know when the response *starts*),
+**TPS** (generation speed), **total latency**, then token counts.
 
-Global, for every project under your home directory:
+That single line tells you something the default footer never does. In the panel above,
+`gpt-5` starts answering in 0.4s while `space-bunny-free` takes 6.8s to say anything. For a
+codebase you iterate on, the model that feels responsive is the one worth paying for.
+
+---
+
+## Install
+
+Requires **OpenCode v2.0.0+**. No build step, no dependencies to install.
 
 ```sh
 mkdir -p ~/.opencode/plugins/throughput
-cp -r opencode-throughput/src/* ~/.opencode/plugins/throughput/
+git clone https://github.com/mrakha60/opencode-v2-throughput.git /tmp/opencode-v2-throughput
+cp /tmp/opencode-v2-throughput/src/* ~/.opencode/plugins/throughput/
 ```
 
-Per project:
+Restart OpenCode. Done.
 
-```sh
-mkdir -p .opencode/plugins/throughput
-cp -r opencode-throughput/src/* .opencode/plugins/throughput/
-```
+Works globally from your home directory, or drop the same directory into any project's
+`.opencode/plugins/`. The folder name does not matter; the plugin takes its identity from the
+`id` in the code, so `throughput` is just a short label.
 
-Restart OpenCode (or run `opencode reload`) and confirm it is active:
+---
 
-```sh
-opencode plugin list
-```
+## The numbers, precisely
 
-### From npm
+Metrics are per **model request**, which is the same granularity as one assistant message.
 
-```sh
-opencode plugin add opencode-throughput
-```
+| Metric | Meaning |
+| --- | --- |
+| **TTFT** | Step start to the first token streamed. `null` for tool-call-only turns. |
+| **TPS** | Output tokens ÷ generation time. Excludes the TTFT wait, so a fast model is not flattered by a slow first token. |
+| **Latency** | Step start to step end. |
 
-## Usage
+Token usage (input / output / reasoning / cache read-write) and cost come straight from the
+server's own accounting, so they match what you are billed.
 
-**Sidebar** — after the first request, the sidebar shows per-model averages and cost. Click the header to collapse it.
+Reasoning counts as a first token, so a reasoning-heavy turn reports a real TTFT instead of `N/A`.
 
-**Toasts** — each completed request raises a summary:
+---
 
-```
-claude-sonnet-4-5 | 1.2s TTFT | 446 tok/s | 3.2s | ↑1.2k ↓892
-```
+## Ask your agent about it
 
-**Benchmark tool** — ask the agent to use the `throughput_benchmark` tool:
+A `throughput_benchmark` tool is registered for the agent to call:
 
-> "Show me the benchmark stats for claude"
-> "Compare model performance"
+> "Which model is fastest for me?"
+>
+> "Compare my latency on claude vs gpt-5"
+>
 > "Show the last 10 requests"
 
-**Logs** — every request is appended to `~/.opencode/throughput.jsonl`, one JSON object per line:
+```
+## Model Performance Benchmark
+Total requests: 12
 
-```json
-{
-  "ts": "2026-10-17T10:00:00.000Z",
-  "model": "anthropic/claude-sonnet-4-5",
-  "providerID": "anthropic",
-  "modelID": "claude-sonnet-4-5",
-  "sessionID": "ses_...",
-  "messageID": "msg_...",
-  "ttft_ms": 1200,
-  "tps": 446,
-  "latency_ms": 3200,
-  "inputTokens": 1200,
-  "outputTokens": 892,
-  "reasoningTokens": 0,
-  "cacheReadTokens": 500,
-  "cacheWriteTokens": 200,
-  "cost": 0.0234,
-  "finish": "stop"
-}
+### anthropic/claude-sonnet-4-5
+  Requests: 7
+
+  **Latency:**
+    TTFT:  avg 1.2s | min 0.9s | max 2.1s
+    Total: avg 3.4s | min 2.2s | max 5.1s
+
+  **Throughput:**
+    TPS:  avg 446 | max 612
+
+  **Tokens:**
+    Input:     8.4k
+    Output:    6.2k
+    Reasoning: 1.1k
+    Cache R/W: 3.5k / 0.0
+
+  **Cost:** $0.3120
 ```
 
-`ttft_ms` and `tps` are `null` when no token was streamed (for example a tool-call-only turn).
+---
 
-**Per-project log** — a rolling Markdown log is also written to `<project>/.opencode/throughput.md`.
+## Your data stays yours
+
+Every request is appended to `~/.opencode/throughput.jsonl`, one JSON object per line:
+
+```json
+{"ts":"2026-10-17T10:54:14.336Z","model":"opencode/space-bunny-free","providerID":"opencode",
+ "modelID":"space-bunny-free","ttft_ms":6769,"tps":94.4,"latency_ms":12593,
+ "inputTokens":125,"outputTokens":550,"reasoningTokens":324,"cacheReadTokens":265259,
+ "cacheWriteTokens":0,"cost":0,"finish":"stop"}
+```
+
+No network calls, no telemetry, no accounts. A rolling human-readable log also lands in
+`<project>/.opencode/throughput.md`.
+
+The log trims itself past 32 MB, so it stays bounded over time.
+
+---
 
 ## How it works
 
-The plugin subscribes to the v2 server event stream:
+Subscribes to the v2 server event stream and measures each request:
 
-| Event | Purpose |
+| Event | Role |
 | --- | --- |
-| `session.step.started` | anchors the request start time and resolves the model |
-| `session.text.started` / `session.reasoning.started` | anchors time-to-first-token (first of either kind) |
-| `session.step.ended` | carries `cost`, `tokens`, and `finish`, and closes the measurement window |
+| `session.step.started` | anchors the request, resolves the model |
+| `session.text.started` / `session.reasoning.started` | anchors time to first token |
+| `session.step.ended` | supplies cost, tokens, finish, and closes the window |
 
-One log entry is written per model request, which is the same granularity as one assistant message.
+Reconnects with backoff if the stream drops, so a flaky connection does not silently stop
+recording. Handlers are individually guarded, so a bug costs one metric rather than the panel.
+
+---
 
 ## Development
 
 ```sh
 npm install
-npm run typecheck
-npm run verify        # typecheck, install, and all four verification scripts
+npm run verify     # typecheck + all four verification scripts
+npm run sync       # install src/ to ~/.opencode/plugins/throughput
 ```
 
-Install your working copy into a plugin directory with:
+The verification suite checks both entrypoints against a copy of OpenCode's own plugin
+validator, drives a scripted event stream to check the metric arithmetic, exercises the TUI
+setup path, and guards against a duplicate `@opentui/core` breaking the sidebar. All of it runs
+in CI.
 
-```sh
-npm run sync          # copies src/ to ~/.opencode/plugins/throughput
-```
+`npm run sync` installs a **real copy**, never a symlink. Module resolution follows `realpath`,
+so a link back to a checkout would let the plugin load a second copy of OpenTUI and fail at
+import. The script refuses to install if it detects that.
 
-Then run `opencode reload`.
+---
 
-`npm run sync` installs a **real copy**, not a symlink. Module resolution follows
-`realpath`, so a link back to this repo would make the repo's `node_modules`
-reachable and the plugin would load a second `@opentui/core`, failing at import
-with `Environment variable "OPENTUI_FORCE_UNICODE" is already registered with
-different configuration`. The script refuses to install if it detects that
-condition.
+## Credits
 
-Verify the entrypoints against OpenCode's own V2 plugin validator and exercise the event handling:
-
-```sh
-npx tsx scripts/verify-plugin-shape.ts    # both entrypoints export { id, setup }
-npx tsx scripts/verify-behavior.ts        # metric arithmetic, logging, tool, resubscribe
-npx tsx scripts/verify-tui-setup.ts       # TUI setup, events, toasts, cleanup
-npx tsx scripts/check-opentui-conflict.ts # a second @opentui/core copy is harmless
-```
-
-All four run in CI alongside the typecheck.
+Forked from [`Howardzhangdqs/opencode-throughput`](https://github.com/Howardzhangdqs/opencode-throughput),
+which is stuck on the v1 plugin API and cannot load under OpenCode v2. This fork is a full port
+to the v2 API: the entrypoint, the event stream, the TUI widget, and the tool registration were
+all rewritten, and the metric definitions were corrected along the way.
 
 ## License
 

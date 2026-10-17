@@ -100,14 +100,14 @@ jobs:
             echo '```jsonc'
             echo '{'
             echo '  "$schema": "https://opencode.ai/config.json",'
-            echo '  "plugins": ["opencode-throughput"]'
+            echo '  "plugins": ["opencode-v2-throughput"]'
             echo '}'
             echo '```'
             echo ""
             echo "### Update Instructions"
             echo ""
             echo '```bash'
-            echo 'opencode plugin update opencode-throughput'
+            echo 'opencode plugin update opencode-v2-throughput'
             echo '```'
           } >"$BODY_FILE"
           cat "$BODY_FILE"
