@@ -7,24 +7,23 @@ on:
     branches: [main]
 
 jobs:
-  typecheck:
-    name: Typecheck
+  verify:
+    name: Typecheck and verify
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
+      - uses: actions/setup-node@v4
         with:
-          bun-version: latest
-      - run: bun install
-      - run: bun run typecheck
+          node-version: 22
+      - run: npm ci
+      - run: npm run typecheck
 
-  build:
-    name: Build
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: latest
-      - run: bun install
-      - run: bun run build
+      # Guards the exact contract OpenCode enforces on load: a V2 plugin entrypoint
+      # must default-export an object with a non-empty `id` and a `setup` function.
+      - name: Verify plugin shape
+        run: npx tsx scripts/verify-plugin-shape.ts
+
+      # Exercises metric arithmetic, durable logging, and the benchmark tool
+      # against a scripted v2 event stream.
+      - name: Verify behavior
+        run: npx tsx scripts/verify-behavior.ts

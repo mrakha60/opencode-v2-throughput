@@ -18,19 +18,20 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: oven-sh/setup-bun@v2
+      - uses: actions/setup-node@v4
         with:
-          bun-version: latest
+          node-version: 22
+          registry-url: https://registry.npmjs.org
 
       - name: Determine release state
         id: determine
         run: |
           set -euo pipefail
-          CURRENT_VERSION=$(bun -e 'import pkg from "./package.json"; console.log(pkg.version)')
+          CURRENT_VERSION=$(node -p "require('./package.json').version")
           echo "current_version=$CURRENT_VERSION" >> "$GITHUB_OUTPUT"
 
           if git rev-parse HEAD^ >/dev/null 2>&1; then
-            PREVIOUS_VERSION=$(bun -e "const { execSync } = require('node:child_process'); try { const data = execSync('git show HEAD^:package.json', { stdio: ['ignore', 'pipe', 'ignore'] }); const json = JSON.parse(data.toString()); if (json && typeof json.version === 'string') { process.stdout.write(json.version); } } catch (error) {}")
+            PREVIOUS_VERSION=$(node -e "const { execSync } = require('node:child_process'); try { const data = execSync('git show HEAD^:package.json', { stdio: ['ignore', 'pipe', 'ignore'] }); const json = JSON.parse(data.toString()); if (json && typeof json.version === 'string') { process.stdout.write(json.version); } } catch (error) {}")
             PREVIOUS_VERSION=${PREVIOUS_VERSION//$'\n'/}
           else
             PREVIOUS_VERSION=""
@@ -50,13 +51,13 @@ jobs:
             echo "tag_exists=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Install dependencies
+      - name: Verify
         if: steps.determine.outputs.changed == 'true' && steps.determine.outputs.tag_exists == 'false'
-        run: bun install
-
-      - name: Build
-        if: steps.determine.outputs.changed == 'true' && steps.determine.outputs.tag_exists == 'false'
-        run: bun run build
+        run: |
+          npm ci
+          npm run typecheck
+          npx tsx scripts/verify-plugin-shape.ts
+          npx tsx scripts/verify-behavior.ts
 
       - name: Generate release notes
         if: steps.determine.outputs.changed == 'true' && steps.determine.outputs.tag_exists == 'false'
@@ -90,20 +91,23 @@ jobs:
             fi
             printf "%s\n" "$CHANGELOG"
             echo ""
+            echo "### Requires"
+            echo ""
+            echo "OpenCode v2.0.0 or newer. This release uses the v2 plugin API and does not run on OpenCode v1."
+            echo ""
             echo "### Installation"
             echo ""
-            echo '```json'
+            echo '```jsonc'
             echo '{'
             echo '  "$schema": "https://opencode.ai/config.json",'
-            echo '  "plugin": ["opencode-throughput"]'
+            echo '  "plugins": ["opencode-throughput"]'
             echo '}'
             echo '```'
             echo ""
             echo "### Update Instructions"
             echo ""
             echo '```bash'
-            echo 'rm -rf ~/.cache/opencode/node_modules/opencode-throughput'
-            echo 'opencode'
+            echo 'opencode plugin update opencode-throughput'
             echo '```'
           } >"$BODY_FILE"
           cat "$BODY_FILE"
