@@ -110,7 +110,23 @@ One log entry is written per model request, which is the same granularity as one
 ```sh
 npm install
 npm run typecheck
+npm run verify        # typecheck, install, and all four verification scripts
 ```
+
+Install your working copy into a plugin directory with:
+
+```sh
+npm run sync          # copies src/ to ~/.opencode/plugins/throughput
+```
+
+Then run `opencode reload`.
+
+`npm run sync` installs a **real copy**, not a symlink. Module resolution follows
+`realpath`, so a link back to this repo would make the repo's `node_modules`
+reachable and the plugin would load a second `@opentui/core`, failing at import
+with `Environment variable "OPENTUI_FORCE_UNICODE" is already registered with
+different configuration`. The script refuses to install if it detects that
+condition.
 
 Verify the entrypoints against OpenCode's own V2 plugin validator and exercise the event handling:
 
